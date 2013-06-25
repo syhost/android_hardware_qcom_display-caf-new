@@ -29,5 +29,8 @@ ifeq ($(call is-board-platform-in-list, mpq8092 msm_bronze msm8916), true)
     LOCAL_SRC_FILES += hwc_vpuclient.cpp
 endif
 
+ifeq ($(TARGET_DISPLAY_USE_RETIRE_FENCE),true)
+    LOCAL_CFLAGS += -DUSE_RETIRE_FENCE
+endif
 
 include $(BUILD_SHARED_LIBRARY)
