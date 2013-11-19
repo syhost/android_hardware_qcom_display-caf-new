@@ -1155,9 +1155,7 @@ int hwc_sync(hwc_context_t *ctx, hwc_display_contents_1_t* list, int dpy,
     int acquireFd[MAX_NUM_APP_LAYERS];
     int count = 0;
     int releaseFd = -1;
-#ifdef USE_RETIRE_FENCE
     int retireFd = -1;
-#endif
     int fbFd = -1;
     bool swapzero = false;
     int mdpVersion = qdutils::MDPVersion::getInstance().getMDPVersion();
@@ -1166,12 +1164,8 @@ int hwc_sync(hwc_context_t *ctx, hwc_display_contents_1_t* list, int dpy,
     memset(&data, 0, sizeof(data));
     data.acq_fen_fd = acquireFd;
     data.rel_fen_fd = &releaseFd;
-#ifdef USE_RETIRE_FENCE
     data.retire_fen_fd = &retireFd;
-#ifdef MDP_BUF_SYNC_FLAG_RETIRE_FENCE
     data.flags = MDP_BUF_SYNC_FLAG_RETIRE_FENCE;
-#endif
-#endif
 
     char property[PROPERTY_VALUE_MAX];
     if(property_get("debug.egl.swapinterval", property, "1") > 0) {
@@ -1187,17 +1181,13 @@ int hwc_sync(hwc_context_t *ctx, hwc_display_contents_1_t* list, int dpy,
     for(uint32_t i = 0; i < ctx->mLayerRotMap[dpy]->getCount(); i++) {
         int rotFd = ctx->mRotMgr->getRotDevFd();
         int rotReleaseFd = -1;
-#ifdef USE_RETIRE_FENCE
         int rotRetireFd = -1;
-#endif
         struct mdp_buf_sync rotData;
         memset(&rotData, 0, sizeof(rotData));
         rotData.acq_fen_fd =
                 &ctx->mLayerRotMap[dpy]->getLayer(i)->acquireFenceFd;
         rotData.rel_fen_fd = &rotReleaseFd; //driver to populate this
-#ifdef USE_RETIRE_FENCE
         rotData.retire_fen_fd = &rotRetireFd;
-#endif
         rotData.session_id = ctx->mLayerRotMap[dpy]->getRot(i)->getSessId();
         int ret = 0;
         ret = ioctl(rotFd, MSMFB_BUFFER_SYNC, &rotData);
@@ -1213,10 +1203,8 @@ int hwc_sync(hwc_context_t *ctx, hwc_display_contents_1_t* list, int dpy,
             //rotator
             ctx->mLayerRotMap[dpy]->getLayer(i)->releaseFenceFd =
                     rotReleaseFd;
-#ifdef USE_RETIRE_FENCE
             //Not used for rotator
             close(rotRetireFd);
-#endif
         }
     }
 
@@ -1291,27 +1279,16 @@ int hwc_sync(hwc_context_t *ctx, hwc_display_contents_1_t* list, int dpy,
 
     //Signals when MDP finishes reading rotator buffers.
     ctx->mLayerRotMap[dpy]->setReleaseFd(releaseFd);
-
-    // if external is animating, close the relaseFd
-    if(isExtAnimating) {
-        close(releaseFd);
-        releaseFd = -1;
-    }
-
-#ifdef USE_RETIRE_FENCE
     close(releaseFd);
-    if(UNLIKELY(swapzero))
-        list->retireFenceFd = -1;
-    else
-        list->retireFenceFd = retireFd;
-#else
-    if(UNLIKELY(swapzero)){
-        list->retireFenceFd = -1;
-        close(releaseFd);
-    } else {
-        list->retireFenceFd = releaseFd;
+    releaseFd = -1;
+
     }
-#endif
+
+    if(UNLIKELY(swapzero)) {
+        list->retireFenceFd = -1;
+    } else {
+        list->retireFenceFd = retireFd;
+    }
 
     return ret;
 }
