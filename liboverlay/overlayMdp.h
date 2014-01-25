@@ -36,11 +36,11 @@ namespace overlay{
 class MdpCtrl {
 public:
     /* ctor reset */
-    explicit MdpCtrl();
+    explicit MdpCtrl(const int& dpy);
     /* dtor close */
     ~MdpCtrl();
     /* init underlying device using fbnum for dpy */
-    bool init(uint32_t dpy);
+    bool init(const int& dpy);
     /* unset overlay, reset and close fd */
     bool close();
     /* reset and set ov id to -1 / MSMFB_NEW_REQUEST */
@@ -116,17 +116,8 @@ private:
     int getUserData() const;
     /* sets user_data[0] */
     void setUserData(int v);
-    /* return true if current overlay is different
-     * than last known good overlay */
-    bool ovChanged() const;
-    /* save mOVInfo to be last known good ov*/
-    void save();
-    /* restore last known good ov to be the current */
-    void restore();
 
     utils::eTransform mOrientation; //Holds requested orientation
-    /* last good known ov info */
-    mdp_overlay   mLkgo;
     /* Actual overlay mdp structure */
     mdp_overlay   mOVInfo;
     /* FD for the mdp fbnum */
@@ -137,8 +128,6 @@ private:
 #ifdef USES_POST_PROCESSING
     /* PP Compute Params */
     struct compute_params mParams;
-    /* indicate if PP params have been changed */
-    bool mPPChanged;
 #endif
 };
 
@@ -171,11 +160,11 @@ private:
 class MdpData {
 public:
     /* ctor reset data */
-    explicit MdpData();
+    explicit MdpData(const int& dpy);
     /* dtor close*/
     ~MdpData();
     /* init FD */
-    bool init(uint32_t dpy);
+    bool init(const int& dpy);
     /* memset0 the underlying mdp object */
     void reset();
     /* close fd, and reset */
@@ -207,8 +196,9 @@ private:
 
 /////   MdpCtrl  //////
 
-inline MdpCtrl::MdpCtrl() {
+inline MdpCtrl::MdpCtrl(const int& dpy) {
     reset();
+    init(dpy);
 }
 
 inline MdpCtrl::~MdpCtrl() {
@@ -263,37 +253,6 @@ inline void MdpCtrl::setBlending(overlay::utils::eBlending blending) {
     default:
         mOVInfo.blend_op = BLEND_OP_COVERAGE;
     }
-}
-
-inline bool MdpCtrl::ovChanged() const {
-#ifdef USES_POST_PROCESSING
-    // Some pp params are stored as pointer address,
-    // so can't compare their content directly.
-    if (mPPChanged) {
-        return true;
-    }
-#endif
-    // 0 means same
-    if(0 == ::memcmp(&mOVInfo, &mLkgo, sizeof (mdp_overlay))) {
-        return false;
-    }
-    return true;
-}
-
-inline void MdpCtrl::save() {
-    if(static_cast<ssize_t>(mOVInfo.id) == MSMFB_NEW_REQUEST) {
-        ALOGE("MdpCtrl current ov has id -1, will not save");
-        return;
-    }
-    mLkgo = mOVInfo;
-}
-
-inline void MdpCtrl::restore() {
-    if(static_cast<ssize_t>(mLkgo.id) == MSMFB_NEW_REQUEST) {
-        ALOGE("MdpCtrl Lkgo ov has id -1, will not restore");
-        return;
-    }
-    mOVInfo = mLkgo;
 }
 
 inline overlay::utils::Whf MdpCtrl::getSrcWhf() const {
@@ -388,7 +347,10 @@ inline bool MdpCtrl3D::useVirtualFB() {
 
 ///////    MdpData   //////
 
-inline MdpData::MdpData() { reset(); }
+inline MdpData::MdpData(const int& dpy) {
+    reset();
+    init(dpy);
+}
 
 inline MdpData::~MdpData() { close(); }
 
