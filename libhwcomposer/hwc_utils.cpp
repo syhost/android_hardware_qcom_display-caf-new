@@ -1168,6 +1168,7 @@ int hwc_sync(hwc_context_t *ctx, hwc_display_contents_1_t* list, int dpy,
     data.rel_fen_fd = &releaseFd;
 #ifdef USE_RETIRE_FENCE
     data.retire_fen_fd = &retireFd;
+    data.flags = MDP_BUF_SYNC_FLAG_RETIRE_FENCE;
 #endif
 
     char property[PROPERTY_VALUE_MAX];
