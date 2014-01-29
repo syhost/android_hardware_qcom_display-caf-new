@@ -57,6 +57,7 @@ static int openFramebufferDevice(hwc_context_t *ctx)
 {
     struct fb_fix_screeninfo finfo;
     struct fb_var_screeninfo info;
+    float xdpi = 0, ydpi = 0;
 
     int fb_fd = openFb(HWC_DISPLAY_PRIMARY);
     if(fb_fd < 0) {
@@ -71,15 +72,15 @@ static int openFramebufferDevice(hwc_context_t *ctx)
         return -errno;
     }
 
-    if (int(info.width) <= 0 || int(info.height) <= 0) {
-        // the driver doesn't return that information
-        // default to 160 dpi
-        info.width  = ((info.xres * 25.4f)/160.0f + 0.5f);
-        info.height = ((info.yres * 25.4f)/160.0f + 0.5f);
+    if (int(info.width) > 0 && int(info.height) > 0) {
+        xdpi = (info.xres * 25.4f) / info.width;
+        ydpi = (info.yres * 25.4f) / info.height;
+    } else {
+        char property[PROPERTY_VALUE_MAX];
+        if (property_get("ro.sf.lcd_density", property, NULL) > 0) {
+            xdpi = ydpi = atoi(property);
+        }
     }
-
-    float xdpi = (info.xres * 25.4f) / info.width;
-    float ydpi = (info.yres * 25.4f) / info.height;
 
 #ifdef MSMFB_METADATA_GET
     struct msmfb_metadata metadata;
