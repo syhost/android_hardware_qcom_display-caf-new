@@ -1186,13 +1186,11 @@ int hwc_sync(hwc_context_t *ctx, hwc_display_contents_1_t* list, int dpy,
     for(uint32_t i = 0; i < ctx->mLayerRotMap[dpy]->getCount(); i++) {
         int rotFd = ctx->mRotMgr->getRotDevFd();
         int rotReleaseFd = -1;
-        int rotRetireFd = -1;
         struct mdp_buf_sync rotData;
         memset(&rotData, 0, sizeof(rotData));
         rotData.acq_fen_fd =
                 &ctx->mLayerRotMap[dpy]->getLayer(i)->acquireFenceFd;
         rotData.rel_fen_fd = &rotReleaseFd; //driver to populate this
-        rotData.retire_fen_fd = &rotRetireFd;
         rotData.session_id = ctx->mLayerRotMap[dpy]->getRot(i)->getSessId();
         int ret = 0;
         ret = ioctl(rotFd, MSMFB_BUFFER_SYNC, &rotData);
@@ -1208,8 +1206,6 @@ int hwc_sync(hwc_context_t *ctx, hwc_display_contents_1_t* list, int dpy,
             //rotator
             ctx->mLayerRotMap[dpy]->getLayer(i)->releaseFenceFd =
                     rotReleaseFd;
-            //Not used for rotator
-            close(rotRetireFd);
         }
     }
 
@@ -1292,14 +1288,11 @@ int hwc_sync(hwc_context_t *ctx, hwc_display_contents_1_t* list, int dpy,
     close(releaseFd);
     releaseFd = -1;
 
-    }
-
     if(UNLIKELY(swapzero)) {
         list->retireFenceFd = -1;
     } else {
         list->retireFenceFd = retireFd;
     }
-
     return ret;
 }
 
