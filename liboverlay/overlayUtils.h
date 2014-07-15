@@ -1,5 +1,5 @@
 /*
-* Copyright (c) 2011-2013, The Linux Foundation. All rights reserved.
+* Copyright (c) 2011-2014, The Linux Foundation. All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
 * modification, are permitted provided that the following conditions are
@@ -408,6 +408,7 @@ struct ScreenInfo {
 };
 
 int getMdpFormat(int format);
+int getMdpFormat(int format, bool tileEnabled);
 int getHALFormat(int mdpFormat);
 int getDownscaleFactor(const int& src_w, const int& src_h,
         const int& dst_w, const int& dst_h);
@@ -422,7 +423,7 @@ int getMdpOrient(eTransform rotation);
 const char* getFormatString(int format);
 
 template <class T>
-inline void memset0(T& t) { ::memset(&t, 0, sizeof(T)); }
+inline void memset0(T& t) { ::memset(&t, 0, sizeof(t)); }
 
 template <class T> inline void swap ( T& a, T& b )
 {
@@ -545,6 +546,17 @@ inline const char* getFormatString(int format){
     formats[MDP_BGR_888] = STR(MDP_BGR_888);
     formats[MDP_Y_CBCR_H2V2_VENUS] = STR(MDP_Y_CBCR_H2V2_VENUS);
     formats[MDP_BGRX_8888] = STR(MDP_BGRX_8888);
+    formats[MDP_RGBA_8888_TILE] = STR(MDP_RGBA_8888_TILE);
+    formats[MDP_ARGB_8888_TILE] = STR(MDP_ARGB_8888_TILE);
+    formats[MDP_ABGR_8888_TILE] = STR(MDP_ABGR_8888_TILE);
+    formats[MDP_BGRA_8888_TILE] = STR(MDP_BGRA_8888_TILE);
+    formats[MDP_RGBX_8888_TILE] = STR(MDP_RGBX_8888_TILE);
+    formats[MDP_XRGB_8888_TILE] = STR(MDP_XRGB_8888_TILE);
+    formats[MDP_XBGR_8888_TILE] = STR(MDP_XBGR_8888_TILE);
+    formats[MDP_BGRX_8888_TILE] = STR(MDP_BGRX_8888_TILE);
+#ifdef MDP_RGB_565_TILE
+    formats[MDP_RGB_565_TILE] = STR(MDP_RGB_565_TILE);
+#endif
     formats[MDP_IMGTYPE_LIMIT] = STR(MDP_IMGTYPE_LIMIT);
 
     if(format < 0 || format >= MDP_IMGTYPE_LIMIT) {
@@ -806,7 +818,7 @@ inline bool OvFD::open(const char* const dev, int flags)
 
 inline void OvFD::setPath(const char* const dev)
 {
-    ::strncpy(mPath, dev, utils::MAX_PATH_LEN);
+    ::strlcpy(mPath, dev, sizeof(mPath));
 }
 
 inline bool OvFD::close()

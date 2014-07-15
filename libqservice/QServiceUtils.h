@@ -49,7 +49,7 @@ inline android::sp<qService::IQService> getBinder() {
 }
 
 inline android::status_t sendSingleParam(uint32_t command, uint32_t value) {
-    android::status_t err = android::FAILED_TRANSACTION;
+    android::status_t err = (android::status_t) android::FAILED_TRANSACTION;
     android::sp<qService::IQService> binder = getBinder();
     android::Parcel inParcel, outParcel;
     inParcel.writeInt32(value);
@@ -87,4 +87,7 @@ inline android::status_t pauseWFD(uint32_t pause) {
     return sendSingleParam(qService::IQService::PAUSE_WFD, pause);
 }
 
+inline android::status_t setWfdStatus(uint32_t wfdStatus) {
+    return sendSingleParam(qService::IQService::SET_WFD_STATUS, wfdStatus);
+}
 #endif /* end of include guard: QSERVICEUTILS_H */

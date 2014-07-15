@@ -1,5 +1,5 @@
 /*
-* Copyright (c) 2013 The Linux Foundation. All rights reserved.
+* Copyright (c) 2013-2014 The Linux Foundation. All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
 * modification, are permitted provided that the following conditions are
@@ -82,7 +82,7 @@ static void adWrite(const int& value) {
     if(adFd >= 0) {
         char opStr[4] = "";
         snprintf(opStr, sizeof(opStr), "%d", value);
-        int ret = write(adFd, opStr, strlen(opStr));
+        ssize_t ret = write(adFd, opStr, strlen(opStr));
         if(ret < 0) {
             ALOGE("%s: Failed to write %d with error %s",
                     __func__, value, strerror(errno));
@@ -157,7 +157,7 @@ void AssertiveDisplay::markDoable(hwc_context_t *ctx,
         const hwc_display_contents_1_t* list) {
     mDoable = false;
     if(mFeatureEnabled &&
-        !ctx->mExtDisplay->isConnected() &&
+        !isSecondaryConnected(ctx) &&
         ctx->listStats[HWC_DISPLAY_PRIMARY].yuvCount == 1) {
         int nYuvIndex = ctx->listStats[HWC_DISPLAY_PRIMARY].yuvIndices[0];
         const hwc_layer_1_t* layer = &list->hwLayers[nYuvIndex];
@@ -182,8 +182,12 @@ bool AssertiveDisplay::prepare(hwc_context_t *ctx,
         return false;
     }
 
-    ovutils::eDest dest = ctx->mOverlay->nextPipe(ovutils::OV_MDP_PIPE_VG,
-            overlay::Overlay::DPY_WRITEBACK, Overlay::MIXER_DEFAULT);
+    Overlay::PipeSpecs pipeSpecs;
+    pipeSpecs.formatClass = Overlay::FORMAT_YUV;
+    pipeSpecs.dpy = overlay::Overlay::DPY_WRITEBACK;
+    pipeSpecs.fb = false;
+
+    ovutils::eDest dest = ctx->mOverlay->getPipe(pipeSpecs);
     if(dest == OV_INVALID) {
         ALOGE("%s failed: No VG pipe available", __func__);
         mDoable = false;
@@ -206,7 +210,8 @@ bool AssertiveDisplay::prepare(hwc_context_t *ctx,
         return false;
     }
 
-    int tmpW, tmpH, size;
+    int tmpW, tmpH;
+    size_t size;
     int format = ovutils::getHALFormat(wb->getOutputFormat());
     if(format < 0) {
         ALOGE("%s invalid format %d", __func__, format);
@@ -217,7 +222,7 @@ bool AssertiveDisplay::prepare(hwc_context_t *ctx,
     size = getBufferSizeAndDimensions(hnd->width, hnd->height,
                 format, tmpW, tmpH);
 
-    if(!wb->configureMemory(size)) {
+    if(!wb->configureMemory((uint32_t)size)) {
         ALOGE("%s: config memory failed", __func__);
         mDoable = false;
         return false;
@@ -278,12 +283,12 @@ bool AssertiveDisplay::draw(hwc_context_t *ctx, int fd, uint32_t offset) {
     return true;
 }
 
-int AssertiveDisplay::getDstFd(hwc_context_t *ctx) const {
+int AssertiveDisplay::getDstFd() const {
     overlay::Writeback *wb = overlay::Writeback::getInstance();
     return wb->getDstFd();
 }
 
-uint32_t AssertiveDisplay::getDstOffset(hwc_context_t *ctx) const {
+uint32_t AssertiveDisplay::getDstOffset() const {
     overlay::Writeback *wb = overlay::Writeback::getInstance();
     return wb->getOffset();
 }

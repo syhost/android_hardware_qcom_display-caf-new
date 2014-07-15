@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2010 The Android Open Source Project
- * Copyright (C) 2012-2013, The Linux Foundation. All rights reserved.
+ * Copyright (C) 2012-2014, The Linux Foundation. All rights reserved.
  *
  * Not a Contribution, Apache license notifications and license are
  * retained for attribution purposes only.
@@ -55,7 +55,7 @@ public:
     virtual android::status_t dispatch(uint32_t command, const Parcel* inParcel,
             Parcel* outParcel) {
         ALOGD_IF(QSERVICE_DEBUG, "%s: dispatch in:%p", __FUNCTION__, inParcel);
-        status_t err = android::FAILED_TRANSACTION;
+        status_t err = (status_t) android::FAILED_TRANSACTION;
         Parcel data;
         Parcel *reply = outParcel;
         data.writeInterfaceToken(IQService::getInterfaceDescriptor());
@@ -80,7 +80,7 @@ status_t BnQService::onTransact(
     IPCThreadState* ipc = IPCThreadState::self();
     const int callerPid = ipc->getCallingPid();
     const int callerUid = ipc->getCallingUid();
-    const size_t MAX_BUF_SIZE = 1024;
+    const int MAX_BUF_SIZE = 1024;
     char callingProcName[MAX_BUF_SIZE] = {0};
 
     getProcName(callerPid, callingProcName, MAX_BUF_SIZE);
@@ -123,10 +123,12 @@ static void getProcName(int pid, char *buf, int size) {
     snprintf(buf, size, "/proc/%d/cmdline", pid);
     fd = open(buf, O_RDONLY);
     if (fd < 0) {
-        strcpy(buf, "Unknown");
+        strlcpy(buf, "Unknown", size);
     } else {
-        int len = read(fd, buf, size - 1);
-        buf[len] = 0;
+        ssize_t len = read(fd, buf, size - 1);
+        if (len >= 0)
+           buf[len] = 0;
+
         close(fd);
     }
 }

@@ -47,7 +47,7 @@
 #include "virtual.h"
 #include "overlayUtils.h"
 #include "overlay.h"
-#include "mdp_version.h"
+#include "qd_utils.h"
 
 using namespace android;
 
@@ -127,14 +127,25 @@ void VirtualDisplay::setToPrimary(uint32_t maxArea,
     // by SUPPORTED_VIRTUAL_AREA).
     if((maxArea == (priW * priH))
         && (maxArea <= SUPPORTED_VIRTUAL_AREA)) {
-        extW = priW;
-        extH = priH;
+        // tmpW and tmpH will hold the primary dimensions before we
+        // update the aspect ratio if necessary.
+        uint32_t tmpW = priW;
+        uint32_t tmpH = priH;
         // If WFD is in landscape, assign the higher dimension
         // to WFD's xres.
         if(priH > priW) {
-            extW = priH;
-            extH = priW;
+            tmpW = priH;
+            tmpH = priW;
         }
+        // The aspect ratios of the external and primary displays
+        // can be different. As a result, directly assigning primary
+        // resolution could lead to an incorrect final image.
+        // We get around this by calculating a new resolution by
+        // keeping aspect ratio intact.
+        hwc_rect r = {0, 0, 0, 0};
+        getAspectRatioPosition(tmpW, tmpH, extW, extH, r);
+        extW = r.right - r.left;
+        extH = r.bottom - r.top;
     }
 }
 
@@ -165,9 +176,15 @@ void VirtualDisplay::setAttributes() {
         uint32_t priW = mHwcContext->dpyAttr[HWC_DISPLAY_PRIMARY].xres;
         uint32_t priH = mHwcContext->dpyAttr[HWC_DISPLAY_PRIMARY].yres;
 
+        // Dynamic Resolution Change depends on MDP downscaling.
+        // MDP downscale property will be ignored to exercise DRC use case.
+        // If DRC is in progress, ext WxH will have non-zero values.
+        bool isDRC = (extW > mVInfo.xres) && (extH > mVInfo.yres);
+
         initResolution(extW, extH);
 
-        if(!qdutils::MDPVersion::getInstance().is8x26()) {
+        if(mHwcContext->mOverlay->isUIScalingOnExternalSupported()
+                && (mHwcContext->mMDPDownscaleEnabled || isDRC)) {
 
             // maxArea represents the maximum resolution between
             // primary and virtual display.
@@ -191,7 +208,7 @@ bool VirtualDisplay::openFrameBuffer()
                                    getFbForDpy(HWC_DISPLAY_VIRTUAL);
 
         char strDevPath[MAX_SYSFS_FILE_PATH];
-        sprintf(strDevPath,"/dev/graphics/fb%d", fbNum);
+        snprintf(strDevPath,sizeof(strDevPath), "/dev/graphics/fb%d", fbNum);
 
         mFd = open(strDevPath, O_RDWR);
         if(mFd < 0) {

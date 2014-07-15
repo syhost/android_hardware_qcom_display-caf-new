@@ -30,7 +30,7 @@
 #include <hwc_qclient.h>
 #include <IQService.h>
 #include <hwc_utils.h>
-#include <hwc_vpuclient.h>
+#include <mdp_version.h>
 
 #define QCLIENT_DEBUG 0
 
@@ -94,17 +94,6 @@ static android::status_t screenRefresh(hwc_context_t *ctx) {
     return result;
 }
 
-static android::status_t vpuCommand(hwc_context_t *ctx,
-        uint32_t command,
-        const Parcel* inParcel,
-        Parcel* outParcel) {
-    status_t result = NO_INIT;
-#ifdef VPU_TARGET
-    result = ctx->mVPUClient->processCommand(command, inParcel, outParcel);
-#endif
-    return result;
-}
-
 static void setExtOrientation(hwc_context_t *ctx, uint32_t orientation) {
     ctx->mExtOrientation = orientation;
 }
@@ -119,15 +108,21 @@ static void getDisplayAttributes(hwc_context_t* ctx, const Parcel* inParcel,
         Parcel* outParcel) {
     int dpy = inParcel->readInt32();
     outParcel->writeInt32(ctx->dpyAttr[dpy].vsync_period);
-    outParcel->writeInt32(ctx->dpyAttr[dpy].xres);
-    outParcel->writeInt32(ctx->dpyAttr[dpy].yres);
+    if (ctx->dpyAttr[dpy].customFBSize) {
+        outParcel->writeInt32(ctx->dpyAttr[dpy].xres_new);
+        outParcel->writeInt32(ctx->dpyAttr[dpy].yres_new);
+    } else {
+        outParcel->writeInt32(ctx->dpyAttr[dpy].xres);
+        outParcel->writeInt32(ctx->dpyAttr[dpy].yres);
+    }
     outParcel->writeFloat(ctx->dpyAttr[dpy].xdpi);
     outParcel->writeFloat(ctx->dpyAttr[dpy].ydpi);
     //XXX: Need to check what to return for HDMI
     outParcel->writeInt32(ctx->mMDP.panel);
 }
-static void setHSIC(hwc_context_t* ctx, const Parcel* inParcel) {
+static void setHSIC(const Parcel* inParcel) {
     int dpy = inParcel->readInt32();
+    ALOGD_IF(0, "In %s: dpy = %d", __FUNCTION__, dpy);
     HSICData_t hsic_data;
     hsic_data.hue = inParcel->readInt32();
     hsic_data.saturation = inParcel->readFloat();
@@ -167,6 +162,9 @@ static status_t getDisplayVisibleRegion(hwc_context_t* ctx, int dpy,
 }
 
 static void pauseWFD(hwc_context_t *ctx, uint32_t pause) {
+    /* TODO: Will remove pauseWFD once all the clients start using
+     * setWfdStatus to indicate the status of WFD display
+     */
     int dpy = HWC_DISPLAY_VIRTUAL;
     if(pause) {
         //WFD Pause
@@ -177,14 +175,27 @@ static void pauseWFD(hwc_context_t *ctx, uint32_t pause) {
     }
 }
 
+static void setWfdStatus(hwc_context_t *ctx, uint32_t wfdStatus) {
+
+    ALOGD_IF(HWC_WFDDISPSYNC_LOG,
+             "%s: Received a binder call that WFD state is %s",
+             __FUNCTION__,getExternalDisplayState(wfdStatus));
+    int dpy = HWC_DISPLAY_VIRTUAL;
+
+    if(wfdStatus == EXTERNAL_OFFLINE) {
+        ctx->mWfdSyncLock.lock();
+        ctx->mWfdSyncLock.signal();
+        ctx->mWfdSyncLock.unlock();
+    } else if(wfdStatus == EXTERNAL_PAUSE) {
+        handle_pause(ctx, dpy);
+    } else if(wfdStatus == EXTERNAL_RESUME) {
+        handle_resume(ctx, dpy);
+    }
+}
+
 status_t QClient::notifyCallback(uint32_t command, const Parcel* inParcel,
         Parcel* outParcel) {
     status_t ret = NO_ERROR;
-
-    if (command > IQService::VPU_COMMAND_LIST_START &&
-        command < IQService::VPU_COMMAND_LIST_END) {
-        return vpuCommand(mHwcContext, command, inParcel, outParcel);
-    }
 
     switch(command) {
         case IQService::SECURING:
@@ -213,16 +224,18 @@ status_t QClient::notifyCallback(uint32_t command, const Parcel* inParcel,
             getDisplayAttributes(mHwcContext, inParcel, outParcel);
             break;
         case IQService::SET_HSIC_DATA:
-            setHSIC(mHwcContext, inParcel);
+            setHSIC(inParcel);
+            break;
         case IQService::PAUSE_WFD:
             pauseWFD(mHwcContext, inParcel->readInt32());
+            break;
+        case IQService::SET_WFD_STATUS:
+            setWfdStatus(mHwcContext,inParcel->readInt32());
             break;
         default:
             ret = NO_ERROR;
     }
     return ret;
 }
-
-
 
 }

@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2008 The Android Open Source Project
- * Copyright (c) 2010-2013, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2010-2014, The Linux Foundation. All rights reserved.
  * Not a Contribution, Apache license notifications and license are retained
  * for attribution purposes only.
  *
@@ -37,6 +37,8 @@
 namespace ovutils = overlay::utils;
 
 namespace overlay {
+using namespace utils;
+
 MdssRot::MdssRot() {
     reset();
     init();
@@ -92,7 +94,8 @@ void MdssRot::setCrop(const utils::Dim& crop) {
     mRotInfo.dst_rect.h = crop.h;
 }
 
-void MdssRot::setDownscale(int ds) {}
+void MdssRot::setDownscale(int /*ds*/) {
+}
 
 void MdssRot::setFlags(const utils::eMdpFlags& flags) {
     mRotInfo.flags = flags;
@@ -133,29 +136,20 @@ bool MdssRot::queueBuffer(int fd, uint32_t offset) {
         mRotData.data.memory_id = fd;
         mRotData.data.offset = offset;
 
-        remap(RotMem::Mem::ROT_NUM_BUFS);
-        OVASSERT(mMem.curr().m.numBufs(), "queueBuffer numbufs is 0");
+        if(false == remap(RotMem::ROT_NUM_BUFS)) {
+            ALOGE("%s Remap failed, not queuing", __FUNCTION__);
+            return false;
+        }
 
         mRotData.dst_data.offset =
-                mMem.curr().mRotOffset[mMem.curr().mCurrOffset];
-        mMem.curr().mCurrOffset =
-                (mMem.curr().mCurrOffset + 1) % mMem.curr().m.numBufs();
+                mMem.mRotOffset[mMem.mCurrIndex];
+        mMem.mCurrIndex =
+                (mMem.mCurrIndex + 1) % mMem.mem.numBufs();
 
         if(!overlay::mdp_wrapper::play(mFd.getFD(), mRotData)) {
             ALOGE("MdssRot play failed!");
             dump();
             return false;
-        }
-
-        // if the prev mem is valid, we need to close
-        if(mMem.prev().valid()) {
-            // FIXME if no wait for vsync the above
-            // play will return immediatly and might cause
-            // tearing when prev.close is called.
-            if(!mMem.prev().close()) {
-                ALOGE("%s error in closing prev rot mem", __FUNCTION__);
-                return false;
-            }
         }
     }
     return true;
@@ -178,7 +172,7 @@ bool MdssRot::open_i(uint32_t numbufs, uint32_t bufsz)
 
     mRotData.dst_data.memory_id = mem.getFD();
     mRotData.dst_data.offset = 0;
-    mMem.curr().m = mem;
+    mMem.mem = mem;
     return true;
 }
 
@@ -186,23 +180,27 @@ bool MdssRot::remap(uint32_t numbufs) {
     // Calculate the size based on rotator's dst format, w and h.
     uint32_t opBufSize = calcOutputBufSize();
     // If current size changed, remap
-    if(opBufSize == mMem.curr().size()) {
+    if(opBufSize == mMem.size()) {
         ALOGE_IF(DEBUG_OVERLAY, "%s: same size %d", __FUNCTION__, opBufSize);
         return true;
     }
 
     ALOGE_IF(DEBUG_OVERLAY, "%s: size changed - remapping", __FUNCTION__);
-    OVASSERT(!mMem.prev().valid(), "Prev should not be valid");
 
-    // ++mMem will make curr to be prev, and prev will be curr
-    ++mMem;
+    if(!mMem.close()) {
+        ALOGE("%s error in closing prev rot mem", __FUNCTION__);
+        return false;
+    }
+
     if(!open_i(numbufs, opBufSize)) {
         ALOGE("%s Error could not open", __FUNCTION__);
         return false;
     }
+
     for (uint32_t i = 0; i < numbufs; ++i) {
-        mMem.curr().mRotOffset[i] = i * opBufSize;
+        mMem.mRotOffset[i] = i * opBufSize;
     }
+
     return true;
 }
 
@@ -233,17 +231,15 @@ void MdssRot::reset() {
     ovutils::memset0(mRotData);
     mRotData.data.memory_id = -1;
     mRotInfo.id = MSMFB_NEW_REQUEST;
-    ovutils::memset0(mMem.curr().mRotOffset);
-    ovutils::memset0(mMem.prev().mRotOffset);
-    mMem.curr().mCurrOffset = 0;
-    mMem.prev().mCurrOffset = 0;
+    ovutils::memset0(mMem.mRotOffset);
+    mMem.mCurrIndex = 0;
     mOrientation = utils::OVERLAY_TRANSFORM_0;
 }
 
 void MdssRot::dump() const {
     ALOGE("== Dump MdssRot start ==");
     mFd.dump();
-    mMem.curr().m.dump();
+    mMem.mem.dump();
     mdp_wrapper::dump("mRotInfo", mRotInfo);
     mdp_wrapper::dump("mRotData", mRotData);
     ALOGE("== Dump MdssRot end ==");
@@ -271,19 +267,52 @@ void MdssRot::getDump(char *buf, size_t len) const {
 // Calculate the compressed o/p buffer size for BWC
 uint32_t MdssRot::calcCompressedBufSize(const ovutils::Whf& destWhf) {
     uint32_t bufSize = 0;
+    //Worst case alignments
     int aWidth = ovutils::align(destWhf.w, 64);
     int aHeight = ovutils::align(destWhf.h, 4);
-    int rau_cnt = aWidth/64;
-    int stride0 = (64 * 4 * rau_cnt) + rau_cnt/8;
-    int stride1 = ((64 * 2 * rau_cnt) + rau_cnt/8) * 2;
-    int stride0_off = (aHeight/4);
-    int stride1_off = (aHeight/2);
+    /*
+       Format           |   RAU size (width x height)
+       ----------------------------------------------
+       ARGB             |       32 pixel x 4 line
+       RGB888           |       32 pixel x 4 line
+       Y (Luma)         |       64 pixel x 4 line
+       CRCB 420         |       32 pixel x 2 line
+       CRCB 422 H2V1    |       32 pixel x 4 line
+       CRCB 422 H1V2    |       64 pixel x 2 line
 
-    //New o/p size for BWC
-    bufSize = (stride0 * stride0_off + stride1 * stride1_off) +
-                (rau_cnt * 2 * (stride0_off + stride1_off));
-    ALOGD_IF(DEBUG_MDSS_ROT, "%s: width = %d, height = %d raucount = %d"
-         "opBufSize = %d ", __FUNCTION__, aWidth, aHeight, rau_cnt, bufSize);
+       Metadata requirements:-
+       1 byte meta data for every 8 RAUs
+       2 byte meta data per RAU
+     */
+
+    //These blocks attempt to allocate for the worst case in each of the
+    //respective format classes, yuv/rgb. The table above is for reference
+    if(utils::isYuv(destWhf.format)) {
+        int yRauCount = aWidth / 64; //Y
+        int cRauCount = aWidth / 32; //C
+        int yStride = (64 * 4 * yRauCount) + alignup(yRauCount, 8) / 8;
+        int cStride = ((32 * 2 * cRauCount) + alignup(cRauCount, 8) / 8) * 2;
+        int yStrideOffset = (aHeight / 4);
+        int cStrideOffset = (aHeight / 2);
+        bufSize = (yStride * yStrideOffset + cStride * cStrideOffset) +
+                (yRauCount * yStrideOffset * 2) +
+                (cRauCount * cStrideOffset * 2) * 2;
+        ALOGD_IF(DEBUG_MDSS_ROT, "%s:YUV Y RAU Count = %d C RAU Count = %d",
+                __FUNCTION__, yRauCount, cRauCount);
+    } else {
+        int rauCount = aWidth / 32;
+        //Single plane
+        int stride = (32 * 4 * rauCount) + alignup(rauCount, 8) / 8;
+        int strideOffset = (aHeight / 4);
+        bufSize = (stride * strideOffset * 4 /*bpp*/) +
+            (rauCount * strideOffset * 2);
+        ALOGD_IF(DEBUG_MDSS_ROT, "%s:RGB RAU count = %d", __FUNCTION__,
+                rauCount);
+    }
+
+    ALOGD_IF(DEBUG_MDSS_ROT, "%s: aligned width = %d, aligned height = %d "
+            "Buf Size = %d", __FUNCTION__, aWidth, aHeight, bufSize);
+
     return bufSize;
 }
 

@@ -1,6 +1,6 @@
 /*
 * Copyright (C) 2008 The Android Open Source Project
-* Copyright (c) 2010-2013, The Linux Foundation. All rights reserved.
+* Copyright (c) 2010-2014, The Linux Foundation. All rights reserved.
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -34,13 +34,6 @@ using namespace qdutils;
 static inline bool isEqual(float f1, float f2) {
         return ((int)(f1*100) == (int)(f2*100)) ? true : false;
 }
-
-#ifdef ANDROID_JELLYBEAN_MR1
-//Since this is unavailable on Android 4.2.2, defining it in terms of base 10
-static inline float log2f(const float& x) {
-    return log(x) / log(2);
-}
-#endif
 
 namespace ovutils = overlay::utils;
 namespace overlay {
@@ -194,6 +187,10 @@ bool MdpCtrl::set() {
             if (!(mOVInfo.flags & MDP_SOURCE_ROTATED_90) &&
                 (mOVInfo.src_rect.h % 4))
                 mOVInfo.src_rect.h = utils::aligndown(mOVInfo.src_rect.h, 4);
+            // For interlaced, width must be multiple of 4 when rotated 90deg.
+            else if ((mOVInfo.flags & MDP_SOURCE_ROTATED_90) &&
+                (mOVInfo.src_rect.w % 4))
+                mOVInfo.src_rect.w = utils::aligndown(mOVInfo.src_rect.w, 4);
         }
     } else {
         if (mdpVersion >= MDSS_V5) {
@@ -245,8 +242,9 @@ void MdpCtrl3D::dump() const {
 }
 
 bool MdpCtrl::setVisualParams(const MetaData_t& data) {
-    bool needUpdate = false;
+    ALOGD_IF(0, "In %s: data.operation = %d", __FUNCTION__, data.operation);
 #ifdef USES_POST_PROCESSING
+    bool needUpdate = false;
     /* calculate the data */
     if (data.operation & PP_PARAM_HSIC) {
         if (mParams.params.pa_params.hue != data.hsicData.hue) {
@@ -381,7 +379,8 @@ bool MdpCtrl::validateAndSet(MdpCtrl* mdpCtrlArray[], const int& count,
 #endif
 
     if(!mdp_wrapper::validateAndSet(fbFd, list)) {
-        if(list.processed_overlays < list.num_overlays) {
+        /* No dump for failure due to insufficient resource */
+        if(errno != E2BIG) {
             mdp_wrapper::dump("Bad ov dump: ",
                 *list.overlay_list[list.processed_overlays]);
         }

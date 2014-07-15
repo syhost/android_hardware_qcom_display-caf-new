@@ -63,17 +63,6 @@ enum mdp_version {
 //                                        0000   -  minor number
 // 8x26 v1 minor number is 0000
 //      v2 minor number is 0001 etc..
-enum mdp_rev {
-    MDSS_MDP_HW_REV_100 = 0x10000000, //8974 v1
-    MDSS_MDP_HW_REV_101 = 0x10010000, //8x26
-    MDSS_MDP_HW_REV_102 = 0x10020000, //8974 v2
-    MDSS_MDP_HW_REV_103 = 0x10030000, //8084
-    MDSS_MDP_HW_REV_104 = 0x10040000, //Next version
-    MDSS_MDP_HW_REV_105 = 0x10050000, //Next version
-    MDSS_MDP_HW_REV_107 = 0x10070000, //Next version
-    MDSS_MDP_HW_REV_200 = 0x20000000, //8092
-    MDSS_MDP_HW_REV_206 = 0x20060000, //Future
-};
 
 enum {
     MAX_DISPLAY_DIM = 2048,
@@ -103,52 +92,67 @@ struct Split {
     friend class MDPVersion;
 };
 
+struct PanelInfo {
+    char mType;                  // Smart or Dumb
+    int mPartialUpdateEnable;    // Partial update feature
+    int mLeftAlign;              // ROI left alignment restriction
+    int mWidthAlign;             // ROI width alignment restriction
+    int mTopAlign;               // ROI top alignment restriction
+    int mHeightAlign;            // ROI height alignment restriction
+    int mMinROIWidth;            // Min width needed for ROI
+    int mMinROIHeight;           // Min height needed for ROI
+    PanelInfo() : mType(NO_PANEL), mPartialUpdateEnable(0),
+    mLeftAlign(0), mWidthAlign(0), mTopAlign(0), mHeightAlign(0),
+    mMinROIWidth(0), mMinROIHeight(0){}
+    friend class MDPVersion;
+};
+
 class MDPVersion : public Singleton <MDPVersion>
 {
 public:
     MDPVersion();
     ~MDPVersion();
     int getMDPVersion() {return mMDPVersion;}
-    char getPanelType() {return mPanelType;}
+    char getPanelType() {return mPanelInfo.mType;}
     bool hasOverlay() {return mHasOverlay;}
-    uint8_t getTotalPipes() { return (mRGBPipes + mVGPipes + mDMAPipes);}
+    uint8_t getTotalPipes() {
+        return (uint8_t)(mRGBPipes + mVGPipes + mDMAPipes);
+    }
     uint8_t getRGBPipes() { return mRGBPipes; }
     uint8_t getVGPipes() { return mVGPipes; }
     uint8_t getDMAPipes() { return mDMAPipes; }
     bool supportsDecimation();
     uint32_t getMaxMDPDownscale();
+    uint32_t getMaxMDPUpscale();
     bool supportsBWC();
+    bool supportsMacroTile();
     int getLeftSplit() { return mSplit.left(); }
     int getRightSplit() { return mSplit.right(); }
+    int isPartialUpdateEnabled() { return mPanelInfo.mPartialUpdateEnable; }
+    int getLeftAlign() { return mPanelInfo.mLeftAlign; }
+    int getWidthAlign() { return mPanelInfo.mWidthAlign; }
+    int getTopAlign() { return mPanelInfo.mTopAlign; }
+    int getHeightAlign() { return mPanelInfo.mHeightAlign; }
+    int getMinROIWidth() { return mPanelInfo.mMinROIWidth; }
+    int getMinROIHeight() { return mPanelInfo.mMinROIHeight; }
     unsigned long getLowBw() { return mLowBw; }
     unsigned long getHighBw() { return mHighBw; }
-
-    bool is8x26() {
-        return (mMdpRev >= MDSS_MDP_HW_REV_101 and
-                mMdpRev < MDSS_MDP_HW_REV_102);
-    }
-    bool is8x74v2() {
-        return (mMdpRev >= MDSS_MDP_HW_REV_102 and
-                mMdpRev < MDSS_MDP_HW_REV_103);
-    }
-    bool is8084() {
-        return (mMdpRev >= MDSS_MDP_HW_REV_103 and
-                mMdpRev < MDSS_MDP_HW_REV_104);
-    }
-    bool is8092() {
-        return (mMdpRev >= MDSS_MDP_HW_REV_200 and
-                mMdpRev < MDSS_MDP_HW_REV_206);
-    }
+    bool isSrcSplit() const;
+    bool isRGBScalarSupported() const;
+    bool is8x26();
+    bool is8x74v2();
+    bool is8084();
+    bool is8092();
+    bool is8x16();
 
 private:
     bool updateSysFsInfo();
-    bool updatePanelInfo();
+    void updatePanelInfo();
     bool updateSplitInfo();
     int tokenizeParams(char *inputParams, const char *delim,
                         char* tokenStr[], int *idx);
     int mFd;
     int mMDPVersion;
-    char mPanelType;
     bool mHasOverlay;
     uint32_t mMdpRev;
     uint8_t mRGBPipes;
@@ -157,9 +161,13 @@ private:
     uint32_t mFeatures;
     uint32_t mMDPDownscale;
     uint32_t mMDPUpscale;
+    bool mMacroTileEnabled;
     Split mSplit;
+    PanelInfo mPanelInfo;
     unsigned long mLowBw; //kbps
     unsigned long mHighBw; //kbps
+    bool mSourceSplit;
+    bool mRGBHasNoScalar;
 };
 }; //namespace qdutils
 #endif //INCLUDE_LIBQCOMUTILS_MDPVER

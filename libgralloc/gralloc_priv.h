@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2008 The Android Open Source Project
- * Copyright (c) 2011-2013, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2011-2014, The Linux Foundation. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,6 +29,8 @@
 #include <cutils/native_handle.h>
 
 #include <cutils/log.h>
+
+#define COMPAT_GRALLOC_PERFORM
 
 #define ROUND_UP_PAGESIZE(x) ( (((unsigned long)(x)) + PAGE_SIZE-1)  & \
                                (~(PAGE_SIZE-1)) )
@@ -74,8 +76,20 @@ enum {
     /* Gralloc perform enums
     */
     GRALLOC_MODULE_PERFORM_CREATE_HANDLE_FROM_BUFFER = 1,
+    // This will be deprecated from latest graphics drivers. This is kept
+    // for those backward compatibility i.e., newer Display HAL + older graphics
+    // libraries
     GRALLOC_MODULE_PERFORM_GET_STRIDE,
+#ifdef COMPAT_GRALLOC_PERFORM
     GRALLOC_MODULE_PERFORM_GET_CUSTOM_STRIDE_AND_HEIGHT_FROM_HANDLE,
+    GRALLOC_MODULE_PERFORM_GET_CUSTOM_STRIDE_FROM_HANDLE,
+#else
+    GRALLOC_MODULE_PERFORM_GET_CUSTOM_STRIDE_FROM_HANDLE,
+    GRALLOC_MODULE_PERFORM_GET_CUSTOM_STRIDE_AND_HEIGHT_FROM_HANDLE,
+#endif
+    GRALLOC_MODULE_PERFORM_GET_ATTRIBUTES,
+    GRALLOC_MODULE_PERFORM_GET_COLOR_SPACE_FROM_HANDLE,
+    GRALLOC_MODULE_PERFORM_GET_YUV_PLANE_INFO,
 };
 
 #define GRALLOC_HEAP_MASK   (GRALLOC_USAGE_PRIVATE_UI_CONTIG_HEAP |\
@@ -108,6 +122,36 @@ enum {
     //v4l2_fourcc('Y', 'B', 'W', 'C'). 10 bit per component. This compressed
     //format reduces the memory access bandwidth
     HAL_PIXEL_FORMAT_YCbCr_422_I_10BIT_COMPRESSED = 0x43574259,
+
+    //Khronos ASTC formats
+    HAL_PIXEL_FORMAT_COMPRESSED_RGBA_ASTC_4x4_KHR    = 0x93B0,
+    HAL_PIXEL_FORMAT_COMPRESSED_RGBA_ASTC_5x4_KHR    = 0x93B1,
+    HAL_PIXEL_FORMAT_COMPRESSED_RGBA_ASTC_5x5_KHR    = 0x93B2,
+    HAL_PIXEL_FORMAT_COMPRESSED_RGBA_ASTC_6x5_KHR    = 0x93B3,
+    HAL_PIXEL_FORMAT_COMPRESSED_RGBA_ASTC_6x6_KHR    = 0x93B4,
+    HAL_PIXEL_FORMAT_COMPRESSED_RGBA_ASTC_8x5_KHR    = 0x93B5,
+    HAL_PIXEL_FORMAT_COMPRESSED_RGBA_ASTC_8x6_KHR    = 0x93B6,
+    HAL_PIXEL_FORMAT_COMPRESSED_RGBA_ASTC_8x8_KHR    = 0x93B7,
+    HAL_PIXEL_FORMAT_COMPRESSED_RGBA_ASTC_10x5_KHR   = 0x93B8,
+    HAL_PIXEL_FORMAT_COMPRESSED_RGBA_ASTC_10x6_KHR   = 0x93B9,
+    HAL_PIXEL_FORMAT_COMPRESSED_RGBA_ASTC_10x8_KHR   = 0x93BA,
+    HAL_PIXEL_FORMAT_COMPRESSED_RGBA_ASTC_10x10_KHR  = 0x93BB,
+    HAL_PIXEL_FORMAT_COMPRESSED_RGBA_ASTC_12x10_KHR  = 0x93BC,
+    HAL_PIXEL_FORMAT_COMPRESSED_RGBA_ASTC_12x12_KHR  = 0x93BD,
+    HAL_PIXEL_FORMAT_COMPRESSED_SRGB8_ALPHA8_ASTC_4x4_KHR    = 0x93D0,
+    HAL_PIXEL_FORMAT_COMPRESSED_SRGB8_ALPHA8_ASTC_5x4_KHR    = 0x93D1,
+    HAL_PIXEL_FORMAT_COMPRESSED_SRGB8_ALPHA8_ASTC_5x5_KHR    = 0x93D2,
+    HAL_PIXEL_FORMAT_COMPRESSED_SRGB8_ALPHA8_ASTC_6x5_KHR    = 0x93D3,
+    HAL_PIXEL_FORMAT_COMPRESSED_SRGB8_ALPHA8_ASTC_6x6_KHR    = 0x93D4,
+    HAL_PIXEL_FORMAT_COMPRESSED_SRGB8_ALPHA8_ASTC_8x5_KHR    = 0x93D5,
+    HAL_PIXEL_FORMAT_COMPRESSED_SRGB8_ALPHA8_ASTC_8x6_KHR    = 0x93D6,
+    HAL_PIXEL_FORMAT_COMPRESSED_SRGB8_ALPHA8_ASTC_8x8_KHR    = 0x93D7,
+    HAL_PIXEL_FORMAT_COMPRESSED_SRGB8_ALPHA8_ASTC_10x5_KHR   = 0x93D8,
+    HAL_PIXEL_FORMAT_COMPRESSED_SRGB8_ALPHA8_ASTC_10x6_KHR   = 0x93D9,
+    HAL_PIXEL_FORMAT_COMPRESSED_SRGB8_ALPHA8_ASTC_10x8_KHR   = 0x93DA,
+    HAL_PIXEL_FORMAT_COMPRESSED_SRGB8_ALPHA8_ASTC_10x10_KHR  = 0x93DB,
+    HAL_PIXEL_FORMAT_COMPRESSED_SRGB8_ALPHA8_ASTC_12x10_KHR  = 0x93DC,
+    HAL_PIXEL_FORMAT_COMPRESSED_SRGB8_ALPHA8_ASTC_12x12_KHR  = 0x93DD,
 };
 
 /* possible formats for 3D content*/
@@ -164,6 +208,8 @@ struct private_handle_t : public native_handle {
             PRIV_FLAGS_ITU_R_601_FR       = 0x00400000,
             PRIV_FLAGS_ITU_R_709          = 0x00800000,
             PRIV_FLAGS_SECURE_DISPLAY     = 0x01000000,
+            // Buffer is rendered in Tile Format
+            PRIV_FLAGS_TILE_RENDERED      = 0x02000000
         };
 
         // file-descriptors
@@ -172,33 +218,35 @@ struct private_handle_t : public native_handle {
         // ints
         int     magic;
         int     flags;
-        int     size;
-        int     offset;
+        size_t  size;
+        size_t  offset;
         int     bufferType;
-        int     base;
-        int     offset_metadata;
+        uintptr_t base;
+        size_t  offset_metadata;
         // The gpu address mapped into the mmu.
-        int     gpuaddr;
+        uintptr_t gpuaddr;
         int     format;
         int     width;
         int     height;
-        int     base_metadata;
+        uintptr_t base_metadata;
 
 #ifdef __cplusplus
-        static const int sNumInts = 12;
+        //TODO64: Revisit this on 64-bit
+        static const int sNumInts = (6 + (3 * (sizeof(size_t)/sizeof(int))) +
+                                    (3 * (sizeof(uintptr_t)/sizeof(int))));
         static const int sNumFds = 2;
         static const int sMagic = 'gmsm';
 
-        private_handle_t(int fd, int size, int flags, int bufferType,
-                         int format,int width, int height, int eFd = -1,
-                         int eOffset = 0, int eBase = 0) :
+        private_handle_t(int fd, size_t size, int flags, int bufferType,
+                         int format, int width, int height, int eFd = -1,
+                         size_t eOffset = 0, uintptr_t eBase = 0) :
             fd(fd), fd_metadata(eFd), magic(sMagic),
             flags(flags), size(size), offset(0), bufferType(bufferType),
             base(0), offset_metadata(eOffset), gpuaddr(0),
             format(format), width(width), height(height),
             base_metadata(eBase)
         {
-            version = sizeof(native_handle);
+            version = (int) sizeof(native_handle);
             numInts = sNumInts;
             numFds = sNumFds;
         }
@@ -217,7 +265,8 @@ struct private_handle_t : public native_handle {
                 hnd->magic != sMagic)
             {
                 ALOGD("Invalid gralloc handle (at %p): "
-                      "ver(%d/%d) ints(%d/%d) fds(%d/%d) magic(%c%c%c%c/%c%c%c%c)",
+                      "ver(%d/%zu) ints(%d/%d) fds(%d/%d)"
+                      "magic(%c%c%c%c/%c%c%c%c)",
                       h,
                       h ? h->version : -1, sizeof(native_handle),
                       h ? h->numInts : -1, sNumInts,

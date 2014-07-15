@@ -1,5 +1,5 @@
 /*
-* Copyright (c) 2011-2012, The Linux Foundation. All rights reserved.
+* Copyright (c) 2011-2014, The Linux Foundation. All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
 * modification, are permitted provided that the following conditions are
@@ -36,6 +36,7 @@
 #include "overlayUtils.h"
 #include "mdpWrapper.h"
 #include "mdp_version.h"
+#include <hardware/hwcomposer_defs.h>
 
 // just a helper static thingy
 namespace {
@@ -144,6 +145,35 @@ int getMdpFormat(int format) {
     // not reached
     return -1;
 }
+
+// This function returns corresponding tile format
+// MDSS support following RGB tile formats
+//  32 bit formats
+//  16 bit formats
+int getMdpFormat(int format, bool tileEnabled)
+{
+    if(!tileEnabled) {
+        return getMdpFormat(format);
+    }
+    switch (format) {
+        case HAL_PIXEL_FORMAT_RGBA_8888 :
+            return MDP_RGBA_8888_TILE;
+        case HAL_PIXEL_FORMAT_RGBX_8888:
+            return MDP_RGBX_8888_TILE;
+#ifdef MDP_RGB_565_TILE
+        case HAL_PIXEL_FORMAT_RGB_565:
+            return MDP_RGB_565_TILE;
+#endif
+        case HAL_PIXEL_FORMAT_BGRA_8888:
+            return MDP_BGRA_8888_TILE;
+        case HAL_PIXEL_FORMAT_BGRX_8888:
+            return MDP_BGRX_8888_TILE;
+        default:
+            return getMdpFormat(format);
+    }
+}
+
+
 
 //Takes mdp format as input and translates to equivalent HAL format
 //Refer to graphics.h, gralloc_priv.h, msm_mdp.h for formats.
@@ -254,11 +284,6 @@ int getDownscaleFactor(const int& src_w, const int& src_h,
         }
     }
     return dscale_factor;
-}
-
-//Since this is unavailable on Android, defining it in terms of base 10
-static inline float log2f(const float& x) {
-    return log(x) / log(2);
 }
 
 void getDecimationFactor(const int& src_w, const int& src_h,
@@ -388,7 +413,7 @@ void getDump(char *buf, size_t len, const char *prefix,
             "V.Deci=%d\n",
             prefix, ov.id, ov.z_order, ov.is_fg, ov.alpha,
             ov.transp_mask, ov.flags, ov.horz_deci, ov.vert_deci);
-    strncat(buf, str, strlen(str));
+    strlcat(buf, str, len);
     getDump(buf, len, "\tsrc", ov.src);
     getDump(buf, len, "\tsrc_rect", ov.src_rect);
     getDump(buf, len, "\tdst_rect", ov.dst_rect);
@@ -401,7 +426,7 @@ void getDump(char *buf, size_t len, const char *prefix,
             "%s w=%d h=%d format=%d %s\n",
             prefix, ov.width, ov.height, ov.format,
             overlay::utils::getFormatString(ov.format));
-    strncat(buf, str_src, strlen(str_src));
+    strlcat(buf, str_src, len);
 }
 
 void getDump(char *buf, size_t len, const char *prefix,
@@ -410,7 +435,7 @@ void getDump(char *buf, size_t len, const char *prefix,
     snprintf(str_rect, 256,
             "%s x=%d y=%d w=%d h=%d\n",
             prefix, ov.x, ov.y, ov.w, ov.h);
-    strncat(buf, str_rect, strlen(str_rect));
+    strlcat(buf, str_rect, len);
 }
 
 void getDump(char *buf, size_t len, const char *prefix,
@@ -419,7 +444,7 @@ void getDump(char *buf, size_t len, const char *prefix,
     snprintf(str, 256,
             "%s id=%d\n",
             prefix, ov.id);
-    strncat(buf, str, strlen(str));
+    strlcat(buf, str, len);
     getDump(buf, len, "\tdata", ov.data);
 }
 
@@ -429,7 +454,7 @@ void getDump(char *buf, size_t len, const char *prefix,
     snprintf(str_data, 256,
             "%s offset=%d memid=%d id=%d flags=0x%x\n",
             prefix, ov.offset, ov.memory_id, ov.id, ov.flags);
-    strncat(buf, str_data, strlen(str_data));
+    strlcat(buf, str_data, len);
 }
 
 void getDump(char *buf, size_t len, const char *prefix,
@@ -438,7 +463,7 @@ void getDump(char *buf, size_t len, const char *prefix,
     snprintf(str, 256, "%s sessid=%u rot=%d, enable=%d downscale=%d\n",
             prefix, rot.session_id, rot.rotations, rot.enable,
             rot.downscale_ratio);
-    strncat(buf, str, strlen(str));
+    strlcat(buf, str, len);
     getDump(buf, len, "\tsrc", rot.src);
     getDump(buf, len, "\tdst", rot.dst);
     getDump(buf, len, "\tsrc_rect", rot.src_rect);
@@ -450,7 +475,7 @@ void getDump(char *buf, size_t len, const char *prefix,
     snprintf(str, 256,
             "%s sessid=%u\n",
             prefix, rot.session_id);
-    strncat(buf, str, strlen(str));
+    strlcat(buf, str, len);
     getDump(buf, len, "\tsrc", rot.src);
     getDump(buf, len, "\tdst", rot.dst);
 }

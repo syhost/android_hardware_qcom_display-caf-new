@@ -50,8 +50,7 @@ public:
         SET_HSIC_DATA,           // Set HSIC on dspp
         GET_DISPLAY_VISIBLE_REGION,  // Get the visibleRegion for dpy
         PAUSE_WFD,               // Pause/Resume WFD
-        VPU_COMMAND_LIST_START = 100, //Reserved block for VPU commands
-        VPU_COMMAND_LIST_END   = 200,
+        SET_WFD_STATUS,          // Set if wfd connection is on/off
         COMMAND_LIST_END = 400,
     };
 
